@@ -1,5 +1,4 @@
 import json
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -7,43 +6,44 @@ REPORT_PATH = Path("/app/report.json")
 LOG_PATH = Path("/app/access.log")
 
 
-def _expected():
-    paths, ips, total = Counter(), set(), 0
-    with open(LOG_PATH) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            total += 1
-            ips.add(line.split()[0])
-            m = re.search(r'"(?:GET|POST|PUT|DELETE|HEAD|PATCH) (\S+) ', line)
-            if m:
-                paths[m.group(1)] += 1
-    return {
-        "total_requests": total,
-        "unique_ips": len(ips),
-        "top_path": paths.most_common(1)[0][0],
-    }
+def _non_empty_log_lines():
+    return [line.strip() for line in LOG_PATH.read_text().splitlines() if line.strip()]
 
 
-def test_report_exists():
+def _load_report():
+    return json.loads(REPORT_PATH.read_text())
+
+
+def test_success_criterion_1_report_file_exists():
+    """Success criterion 1: Create the file /app/report.json."""
     assert REPORT_PATH.exists(), "no report.json found at /app/report.json"
 
 
-def test_report_is_valid_json():
-    assert REPORT_PATH.stat().st_size > 0, "report.json is empty"
-    json.loads(REPORT_PATH.read_text())
+def test_success_criterion_2_report_is_valid_json_object():
+    """Success criterion 2: /app/report.json must contain a valid JSON object."""
+    data = _load_report()
+    assert isinstance(data, dict), "report.json must contain a JSON object"
 
 
-def test_report_has_required_keys():
-    data = json.loads(REPORT_PATH.read_text())
-    for key in ("total_requests", "unique_ips", "top_path"):
-        assert key in data, f"missing required key: {key}"
+def test_success_criterion_3_total_requests_is_correct():
+    """Success criterion 3: total_requests equals the number of non-empty lines in /app/access.log."""
+    data = _load_report()
+    expected_total_requests = len(_non_empty_log_lines())
+    assert data.get("total_requests") == expected_total_requests
 
 
-def test_report_values_are_correct():
-    data = json.loads(REPORT_PATH.read_text())
-    expected = _expected()
-    assert data["total_requests"] == expected["total_requests"]
-    assert data["unique_ips"] == expected["unique_ips"]
-    assert data["top_path"] == expected["top_path"]
+def test_success_criterion_4_unique_ips_is_correct():
+    """Success criterion 4: unique_ips equals the number of distinct first whitespace-separated fields."""
+    data = _load_report()
+    lines = _non_empty_log_lines()
+    expected_unique_ips = len({line.split()[0] for line in lines})
+    assert data.get("unique_ips") == expected_unique_ips
+
+
+def test_success_criterion_5_top_path_is_correct():
+    """Success criterion 5: top_path equals the most frequent seventh whitespace-separated field."""
+    data = _load_report()
+    lines = _non_empty_log_lines()
+    path_counts = Counter(line.split()[6] for line in lines)
+    expected_top_path = path_counts.most_common(1)[0][0]
+    assert data.get("top_path") == expected_top_path
